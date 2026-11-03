@@ -6,6 +6,7 @@ from transformer.attention import MultiHeadAttention
 from transformer.embedding import TransformerEmbedding
 from transformer.feed_forward import FeedForward
 from transformer.normalization import LayerNormalization
+from transformer.masking import make_padding_mask
 
 
 class EncoderBlock(nn.Module):
@@ -70,8 +71,10 @@ class TransformerEncoder(nn.Module):
         num_layers: int = 6,
         dropout: float = 0.1,
         max_len: int = 5000,
+        pad_id: int = 0,
     ):
         super().__init__()
+        self.pad_id = pad_id
 
         if num_layers <= 0:
             raise ValueError("num_layers must be positive.")
@@ -93,11 +96,17 @@ class TransformerEncoder(nn.Module):
             for _ in range(num_layers)
         ])
 
+    
     def forward(
         self,
         token_ids: torch.Tensor,
         mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, list[torch.Tensor]]:
+
+        if mask is None:
+            mask = make_padding_mask(
+                token_ids, pad_id=self.pad_id
+            )
 
         x = self.embedding(token_ids)
         attention_maps = []
@@ -107,3 +116,4 @@ class TransformerEncoder(nn.Module):
             attention_maps.append(weights)
 
         return x, attention_maps
+

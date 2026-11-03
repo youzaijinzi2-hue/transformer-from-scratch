@@ -2,8 +2,8 @@
 import math
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 def scaled_dot_product_attention(
@@ -45,11 +45,21 @@ def scaled_dot_product_attention(
     return Z, A
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model: int, num_heads: int):
-        super().__init__()
+    """
+    Multi-head self-attention and cross-attention.
 
-        if d_model <= 0 or num_heads <= 0:
-            raise ValueError("Dimensions must be positive.")
+    x:       (B, Nq, D)
+    context: (B, Nk, D)
+    mask:    broadcastable to (B, H, Nq, Nk)
+             True = allowed
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+    ):
+        super().__init__()
 
         if d_model % num_heads != 0:
             raise ValueError(
@@ -60,49 +70,52 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.d_k = d_model // num_heads
 
-        # Learnable linear transformations
         self.W_Q = nn.Linear(d_model, d_model, bias=False)
         self.W_K = nn.Linear(d_model, d_model, bias=False)
         self.W_V = nn.Linear(d_model, d_model, bias=False)
-
-        # Output projection
         self.W_O = nn.Linear(d_model, d_model, bias=False)
 
-    def split_heads(self, x: torch.Tensor):
+    def split_heads(self, x: torch.Tensor) -> torch.Tensor:
         B, N, D = x.shape
 
-        # (B, N, D) -> (B, N, H, d_k)
-        x = x.reshape(
+        return x.reshape(
             B, N, self.num_heads, self.d_k
-        )
-
-        # (B, N, H, d_k) -> (B, H, N, d_k)
-        return x.transpose(1, 2)
+        ).transpose(1, 2)
 
     def forward(
         self,
         x: torch.Tensor,
         mask: torch.Tensor | None = None,
-    ):
-        B, N, D = x.shape
+        context: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
 
-        # Generate Q, K, V
+        # Self-attention when context is not supplied
+        if context is None:
+            context = x
+
+        B, Nq, D = x.shape
+        Bk, Nk, Dk = context.shape
+
+        if B != Bk or D != self.d_model or Dk != D:
+            raise ValueError("Incompatible input dimensions.")
+
+        # Query from x, Key and Value from context
         Q = self.split_heads(self.W_Q(x))
-        K = self.split_heads(self.W_K(x))
-        V = self.split_heads(self.W_V(x))
+        K = self.split_heads(self.W_K(context))
+        V = self.split_heads(self.W_V(context))
 
-        # Attention for each head
+        # Q: (B, H, Nq, d_k)
+        # K: (B, H, Nk, d_k)
+        # V: (B, H, Nk, d_k)
+
         Z, A = scaled_dot_product_attention(
             Q, K, V, mask=mask
         )
 
-        # (B, H, N, d_k) -> (B, N, H, d_k)
+        # Z: (B, H, Nq, d_k)
+        # A: (B, H, Nq, Nk)
+
         Z = Z.transpose(1, 2).contiguous()
+        Z = Z.reshape(B, Nq, D)
 
-        # Concatenate all heads
-        Z = Z.reshape(B, N, D)
-
-        # Output projection
-        Z = self.W_O(Z)
-
-        return Z, A
+        return self.W_O(Z), A

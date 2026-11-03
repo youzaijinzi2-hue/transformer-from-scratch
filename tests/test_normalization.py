@@ -1,6 +1,6 @@
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from transformer.normalization import LayerNormalization
 
