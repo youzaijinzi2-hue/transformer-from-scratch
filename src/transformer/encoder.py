@@ -3,6 +3,7 @@ import torch
 from torch import nn
 
 from transformer.attention import MultiHeadAttention
+from transformer.embedding import TransformerEmbedding
 from transformer.feed_forward import FeedForward
 from transformer.normalization import LayerNormalization
 
@@ -55,3 +56,54 @@ class EncoderBlock(nn.Module):
         )
 
         return z, attn_weights
+
+
+class TransformerEncoder(nn.Module):
+    """Stack of Transformer encoder blocks."""
+
+    def __init__(
+        self,
+        vocab_size: int,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        num_layers: int = 6,
+        dropout: float = 0.1,
+        max_len: int = 5000,
+    ):
+        super().__init__()
+
+        if num_layers <= 0:
+            raise ValueError("num_layers must be positive.")
+
+        self.embedding = TransformerEmbedding(
+            vocab_size=vocab_size,
+            d_model=d_model,
+            max_len=max_len,
+            dropout=dropout,
+        )
+
+        self.layers = nn.ModuleList([
+            EncoderBlock(
+                d_model=d_model,
+                num_heads=num_heads,
+                d_ff=d_ff,
+                dropout=dropout,
+            )
+            for _ in range(num_layers)
+        ])
+
+    def forward(
+        self,
+        token_ids: torch.Tensor,
+        mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
+
+        x = self.embedding(token_ids)
+        attention_maps = []
+
+        for layer in self.layers:
+            x, weights = layer(x, mask=mask)
+            attention_maps.append(weights)
+
+        return x, attention_maps
