@@ -30,6 +30,13 @@ class TransformerEmbedding(nn.Module):
         self.token_embedding = nn.Embedding(
             vocab_size, d_model
         )
+        # Initialize embeddings with variance 1 / d_model
+        nn.init.normal_(
+            self.token_embedding.weight,
+            mean=0.0,
+            std=d_model ** -0.5,
+        )
+        
         self.position = PositionalEncoding(
             d_model, max_len
         )
